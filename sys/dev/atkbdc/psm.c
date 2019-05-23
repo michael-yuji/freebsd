@@ -236,6 +236,8 @@ typedef struct synapticsinfo {
 	int			 softbutton3_x;
 	int			 max_x;
 	int			 max_y;
+	int			 natural_ver_scroll;
+	int			 natural_hor_scroll;
 } synapticsinfo_t;
 
 typedef struct synapticspacket {
@@ -464,7 +466,6 @@ struct psm_softc {		/* Driver status information */
 	int		muxtpbuttons;	/* Touchpad button state */
 	int		muxmsbuttons;	/* Mouse (trackpoint) button state */
 	struct timeval	muxmidtimeout;	/* middle button supression timeout */
-	int		natural_scroll;
 #ifdef EVDEV_SUPPORT
 	struct evdev_dev *evdev_a;	/* Absolute reporting device */
 	struct evdev_dev *evdev_r;	/* Relative reporting device */
@@ -572,9 +573,11 @@ enum {
 	SYNAPTICS_SYSCTL_SOFTBUTTONS_Y =	SYN_OFFSET(softbuttons_y),
 	SYNAPTICS_SYSCTL_SOFTBUTTON2_X =	SYN_OFFSET(softbutton2_x),
 	SYNAPTICS_SYSCTL_SOFTBUTTON3_X =	SYN_OFFSET(softbutton3_x),
-	SYNAPTICS_SYSCTL_NATURAL_SCROLL =	SYN_OFFSET(natural_scroll),
+	SYNAPTICS_SYSCTL_NATURAL_VER_SCROLL =	SYN_OFFSET(natural_ver_scroll),
+	SYNAPTICS_SYSCTL_NATURAL_HOR_SCROLL =	SYN_OFFSET(natural_hor_scroll),
 };
 
+#define SYNAPTICS_SYSCTL_LAST SYNAPTICS_SYSCTL_NATURAL_HOR_SCROLL
 /* packet formatting function */
 typedef int	packetfunc_t(struct psm_softc *, u_char *, int *, int,
     mousestatus_t *);
@@ -4132,7 +4135,8 @@ psmsmoother(struct psm_softc *sc, finger_t *f, int smoother_id,
 		int div_min, div_max, div_len;
 		int vscroll_hor_area, vscroll_ver_area;
 		int two_finger_scroll;
-		int natural_scroll;
+		int natural_ver_scroll;
+		int natural_hor_scroll;
 		int max_x, max_y;
 		int len, weight_prev_x, weight_prev_y;
 		int div_max_x, div_max_y, div_x, div_y;
@@ -4162,7 +4166,8 @@ psmsmoother(struct psm_softc *sc, finger_t *f, int smoother_id,
 		vscroll_hor_area = sc->syninfo.vscroll_hor_area;
 		vscroll_ver_area = sc->syninfo.vscroll_ver_area;
 		two_finger_scroll = sc->syninfo.two_finger_scroll;
-		natural_scroll = sc->syninfo.natural_scroll;
+		natural_ver_scroll = sc->syninfo.natural_ver_scroll;
+		natural_hor_scroll = sc->syninfo.natural_hor_scroll;
 		max_x = sc->syninfo.max_x;
 		max_y = sc->syninfo.max_y;
 
@@ -4326,19 +4331,26 @@ psmsmoother(struct psm_softc *sc, finger_t *f, int smoother_id,
 			    smoother_id, dx, dy, dxp, dyp));
 			break;
 		case 1: /* Vertical scrolling. */
-			if (dyp == 0)
-				break;
-			if (two_finger_scroll && natural_scroll)
-				ms->button |= (dyp > 0) ?
-				    MOUSE_BUTTON5DOWN : MOUSE_BUTTON4DOWN;
-			else
-				ms->button |= (dyp > 0) ?
-				    MOUSE_BUTTON4DOWN : MOUSE_BUTTON5DOWN;
+			if (dyp != 0) {
+				if (two_finger_scroll && natural_ver_scroll 
+				    && ((ms->button & MOUSE_BUTTON2DOWN) == 0))
+					ms->button |= (dyp > 0) ?
+						MOUSE_BUTTON5DOWN : MOUSE_BUTTON4DOWN;
+				else
+					ms->button |= (dyp > 0) ?
+					    MOUSE_BUTTON4DOWN : MOUSE_BUTTON5DOWN;
+			}
 			break;
 		case 2: /* Horizontal scrolling. */
-			if (dxp != 0)
-				ms->button |= (dxp > 0) ?
-				    MOUSE_BUTTON7DOWN : MOUSE_BUTTON6DOWN;
+			if (dxp != 0) {
+				if (two_finger_scroll && natural_hor_scroll
+				    && ((ms->button & MOUSE_BUTTON2DOWN) == 0))
+					ms->button |= (dxp > 0) ?
+					    MOUSE_BUTTON6DOWN : MOUSE_BUTTON7DOWN;
+				else
+					ms->button |= (dxp > 0) ?
+				    	    MOUSE_BUTTON7DOWN : MOUSE_BUTTON6DOWN;
+			}
 			break;
 		}
 
@@ -5650,7 +5662,7 @@ synaptics_sysctl(SYSCTL_HANDLER_ARGS)
 	int error, arg;
 
 	if (oidp->oid_arg1 == NULL || oidp->oid_arg2 < 0 ||
-	    oidp->oid_arg2 > SYNAPTICS_SYSCTL_SOFTBUTTON3_X)
+	    oidp->oid_arg2 > SYNAPTICS_SYSCTL_LAST)
 		return (EINVAL);
 
 	sc = oidp->oid_arg1;
@@ -5738,7 +5750,9 @@ synaptics_sysctl(SYSCTL_HANDLER_ARGS)
 		    arg > sc->synhw.maximumYCoord)
 			return (EINVAL);
 		break;
-        case SYNAPTICS_SYSCTL_TOUCHPAD_OFF:
+	case SYNAPTICS_SYSCTL_TOUCHPAD_OFF:
+	case SYNAPTICS_SYSCTL_NATURAL_VER_SCROLL:
+	case SYNAPTICS_SYSCTL_NATURAL_HOR_SCROLL:
 		if (arg < 0 || arg > 1)
 			return (EINVAL);
 		break;
@@ -5838,6 +5852,7 @@ synaptics_sysctl_create_tree(struct psm_softc *sc, const char *name,
 		sc->syninfo.two_finger_scroll = 0;
 	else
 		sc->syninfo.two_finger_scroll = 1;
+
 	/* hw.psm.synaptics.two_finger_scroll. */
 	SYSCTL_ADD_INT(&sc->syninfo.sysctl_ctx,
 	    SYSCTL_CHILDREN(sc->syninfo.sysctl_tree), OID_AUTO,
@@ -6131,14 +6146,21 @@ synaptics_sysctl_create_tree(struct psm_softc *sc, const char *name,
 	    synaptics_sysctl, "I",
 	    "Turn off touchpad");
 
-	/* by default turn off natural scroll */
-	sc->sysinfo.natural_scroll = 0;
+	sc->syninfo.natural_ver_scroll = 0;
 	SYSCTL_ADD_PROC(&sc->syninfo.sysctl_ctx,
 	    SYSCTL_CHILDREN(sc->syninfo.sysctl_tree), OID_AUTO,
-	    "natural_scrolling", CTLTYPE_INT|CTLFLAG_RW|CTLFLAG_ANYBODY,
-	    sc, SYNAPTICS_SYSCTL_NATURAL_SCROLL,
+	    "natural_ver_scroll", CTLTYPE_INT|CTLFLAG_RW|CTLFLAG_ANYBODY,
+	    sc, SYNAPTICS_SYSCTL_NATURAL_VER_SCROLL,
 	    synaptics_sysctl, "I",
-	    "Enable natural scrolling with two finger scroll");
+	    "natural scrolling in vertical direction");
+
+	sc->syninfo.natural_hor_scroll = 0;
+	SYSCTL_ADD_PROC(&sc->syninfo.sysctl_ctx,
+	    SYSCTL_CHILDREN(sc->syninfo.sysctl_tree), OID_AUTO,
+	    "natural_hor_scroll", CTLTYPE_INT|CTLFLAG_RW|CTLFLAG_ANYBODY,
+	    sc, SYNAPTICS_SYSCTL_NATURAL_HOR_SCROLL,
+	    synaptics_sysctl, "I",
+	    "natural scrolling in horizontal direction");
 
 	sc->syninfo.softbuttons_y = 0;
 	sc->syninfo.softbutton2_x = 0;
