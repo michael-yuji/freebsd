@@ -236,9 +236,8 @@ typedef struct synapticsinfo {
 	int			 softbutton3_x;
 	int			 max_x;
 	int			 max_y;
-	int			 natural_ver_scroll;
-	int			 natural_hor_scroll;
 	int			 three_finger_drag;
+	int			 natural_scroll;
 } synapticsinfo_t;
 
 typedef struct synapticspacket {
@@ -574,9 +573,9 @@ enum {
 	SYNAPTICS_SYSCTL_SOFTBUTTONS_Y =	SYN_OFFSET(softbuttons_y),
 	SYNAPTICS_SYSCTL_SOFTBUTTON2_X =	SYN_OFFSET(softbutton2_x),
 	SYNAPTICS_SYSCTL_SOFTBUTTON3_X =	SYN_OFFSET(softbutton3_x),
-	SYNAPTICS_SYSCTL_NATURAL_VER_SCROLL = 	SYN_OFFSET(natural_ver_scroll),
-	SYNAPTICS_SYSCTL_NATURAL_HOR_SCROLL =	SYN_OFFSET(natural_hor_scroll),
 	SYNAPTICS_SYSCTL_THREE_FINGER_DRAG = 	SYN_OFFSET(three_finger_drag),
+	SYNAPTICS_SYSCTL_NATURAL_SCROLL =	SYN_OFFSET(natural_scroll),
+#define	SYNAPTICS_SYSCTL_LAST	SYNAPTICS_SYSCTL_NATURAL_SCROLL
 };
 
 #define SYNAPTICS_SYSCTL_LAST SYNAPTICS_SYSCTL_THREE_FINGER_DRAG
@@ -4143,8 +4142,7 @@ psmsmoother(struct psm_softc *sc, finger_t *f, int smoother_id,
 		int len, weight_prev_x, weight_prev_y;
 		int div_max_x, div_max_y, div_x, div_y;
 		int is_fuzzy;
-		int natural_ver_scroll;
-		int natural_hor_scroll;
+		int natural_scroll;
 
 		/* Read sysctl. */
 		/* XXX Verify values? */
@@ -4172,8 +4170,7 @@ psmsmoother(struct psm_softc *sc, finger_t *f, int smoother_id,
 		two_finger_scroll = sc->syninfo.two_finger_scroll;
 		max_x = sc->syninfo.max_x;
 		max_y = sc->syninfo.max_y;
-		natural_ver_scroll = sc->syninfo.natural_ver_scroll;
-		natural_hor_scroll = sc->syninfo.natural_hor_scroll;
+		natural_scroll = sc->syninfo.natural_scroll;
 
 		is_fuzzy = (f->flags & PSM_FINGER_FUZZY) != 0;
 
@@ -4336,7 +4333,7 @@ psmsmoother(struct psm_softc *sc, finger_t *f, int smoother_id,
 			break;
 		case 1: /* Vertical scrolling. */
 			if (dyp != 0) {
-				if (two_finger_scroll && natural_ver_scroll)
+				if (two_finger_scroll && natural_scroll)
 					ms->button |= (dyp > 0) ?
 					    MOUSE_BUTTON5DOWN : MOUSE_BUTTON4DOWN;
 				else
@@ -4346,7 +4343,7 @@ psmsmoother(struct psm_softc *sc, finger_t *f, int smoother_id,
 			break;
 		case 2: /* Horizontal scrolling. */
 			if (dxp != 0) {
-				if (two_finger_scroll && natural_hor_scroll)
+				if (two_finger_scroll && natural_scroll)
 					ms->button |= (dxp > 0) ?
 					    MOUSE_BUTTON6DOWN : MOUSE_BUTTON7DOWN;
 				else
@@ -5753,9 +5750,8 @@ synaptics_sysctl(SYSCTL_HANDLER_ARGS)
 			return (EINVAL);
 		break;
         case SYNAPTICS_SYSCTL_TOUCHPAD_OFF:
-	case SYNAPTICS_SYSCTL_NATURAL_VER_SCROLL:
-	case SYNAPTICS_SYSCTL_NATURAL_HOR_SCROLL:
 	case SYNAPTICS_SYSCTL_THREE_FINGER_DRAG:
+	case SYNAPTICS_SYSCTL_NATURAL_SCROLL:
 		if (arg < 0 || arg > 1)
 			return (EINVAL);
 		break;
@@ -6148,22 +6144,6 @@ synaptics_sysctl_create_tree(struct psm_softc *sc, const char *name,
 	    synaptics_sysctl, "I",
 	    "Turn off touchpad");
 
-	sc->syninfo.natural_ver_scroll = 0;
-	SYSCTL_ADD_PROC(&sc->syninfo.sysctl_ctx,
-	    SYSCTL_CHILDREN(sc->syninfo.sysctl_tree), OID_AUTO,
-	    "natural_ver_scroll", CTLTYPE_INT|CTLFLAG_RW|CTLFLAG_ANYBODY,
-	    sc, SYNAPTICS_SYSCTL_NATURAL_VER_SCROLL,
-	    synaptics_sysctl, "I",
-	    "natural scrolling in vertical direction");
-
-	sc->syninfo.natural_hor_scroll = 0;
-	SYSCTL_ADD_PROC(&sc->syninfo.sysctl_ctx,
-	    SYSCTL_CHILDREN(sc->syninfo.sysctl_tree), OID_AUTO,
-	    "natural_hor_scroll", CTLTYPE_INT|CTLFLAG_RW|CTLFLAG_ANYBODY,
-	    sc, SYNAPTICS_SYSCTL_NATURAL_HOR_SCROLL,
-	    synaptics_sysctl, "I",
-	    "natural scrolling in horizontal direction");
-
 	sc->syninfo.three_finger_drag = 0;
 	SYSCTL_ADD_PROC(&sc->syninfo.sysctl_ctx,
 	    SYSCTL_CHILDREN(sc->syninfo.sysctl_tree), OID_AUTO,
@@ -6171,6 +6151,15 @@ synaptics_sysctl_create_tree(struct psm_softc *sc, const char *name,
 	    sc, SYNAPTICS_SYSCTL_THREE_FINGER_DRAG,
 	    synaptics_sysctl, "I",
 	    "Enable dragging with three fingers");
+
+	/* hw.psm.synaptics.natural_scroll. */
+	sc->syninfo.natural_scroll = 0;
+	SYSCTL_ADD_PROC(&sc->syninfo.sysctl_ctx,
+	    SYSCTL_CHILDREN(sc->syninfo.sysctl_tree), OID_AUTO,
+	    "natural_scroll", CTLTYPE_INT|CTLFLAG_RW|CTLFLAG_ANYBODY,
+	    sc, SYNAPTICS_SYSCTL_NATURAL_SCROLL,
+	    synaptics_sysctl, "I",
+	    "Enable natural scrolling");
 
 	sc->syninfo.softbuttons_y = 0;
 	sc->syninfo.softbutton2_x = 0;
@@ -7164,7 +7153,7 @@ enable_elantech(struct psm_softc *sc, enum probearg arg)
 {
 	static const int ic2hw[] =
 	/*IC: 0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f */
-	    { 0, 0, 2, 0, 2, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 0 };
+	    { 0, 0, 2, 0, 2, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4 };
 	static const int fw_sizes[][3] = {
 		/* FW.vers  MaxX  MaxY */
 		{ 0x020030, 1152,  768 },
