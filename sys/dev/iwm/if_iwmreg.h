@@ -511,6 +511,7 @@ enum iwm_secure_boot_status_reg {
 #define IWM_WFPM_PS_CTL_CLR			0xa0300c
 #define IWM_WFMP_MAC_ADDR_0			0xa03080
 #define IWM_WFMP_MAC_ADDR_1			0xa03084
+#define IWM_WFPM_GP2				0xa030B4
 #define IWM_LMPM_PMG_EN				0xa01cec
 #define IWM_RADIO_REG_SYS_MANUAL_DFT_0		0xad4078
 #define IWM_RFIC_REG_RD				0xad0470
@@ -643,7 +644,7 @@ enum iwm_ucode_tlv_api {
 	IWM_UCODE_TLV_API_WIFI_MCC_UPDATE	= 9,
 	IWM_UCODE_TLV_API_LQ_SS_PARAMS		= 18,
 
-	IWM_NUM_UCODE_TLV_API = 32
+	IWM_NUM_UCODE_TLV_API = 128
 };
 
 #define IWM_UCODE_TLV_API_BITS \
